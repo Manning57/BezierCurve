@@ -1,0 +1,244 @@
+package opengl101;
+
+import graphicslib3D.*;
+import graphicslib3D.GLSLUtils.*;
+
+import java.nio.*;
+import javax.swing.*;
+
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.nio.*;
+import javax.swing.*;
+
+import static com.jogamp.opengl.GL.GL_ARRAY_BUFFER;
+import static com.jogamp.opengl.GL.GL_POINTS;
+import static com.jogamp.opengl.GL.GL_STATIC_DRAW;
+import static com.jogamp.opengl.GL4.*;
+import com.jogamp.opengl.*;
+import com.jogamp.opengl.awt.GLCanvas;
+import com.jogamp.opengl.util.FPSAnimator;
+import com.jogamp.common.nio.Buffers;
+import java.util. Random;
+import java.util.Scanner;
+import java.lang.Math; 
+
+
+public class Curve extends JFrame implements GLEventListener
+{	private GLCanvas myCanvas;
+	private int rendering_program;
+	private int rendering_program2;
+	private int vao[] = new int[1];
+	private int vbo[] = new int[2];
+	private float cameraX, cameraY, cameraZ;
+	private GLSLUtils util = new GLSLUtils();
+	private int N = 0;
+	private float[] vertex_positions=new float[3*2];//Three points, two coordinates
+	
+public Curve(int n)
+	{	
+		N = n;
+		setTitle("Bezier");
+		setSize((int) (600), (int) (600));
+		//Making sure we get a GL4 context for the canvas
+        GLProfile profile = GLProfile.get(GLProfile.GL4);
+        GLCapabilities capabilities = new GLCapabilities(profile);
+		myCanvas = new GLCanvas(capabilities);
+ 		//end GL4 context
+		myCanvas.addGLEventListener(this);
+		getContentPane().add(myCanvas);
+		this.setVisible(true);
+		
+	}
+
+	public void display(GLAutoDrawable drawable)
+	{	GL4 gl = (GL4) GLContext.getCurrentGL();
+				
+		float[] v1=new float[2];//Two coordinates
+		float[] v2=new float[2];//Two coordinates
+		float[] v3=new float[2];//Two coordinates
+		
+		v1[0]=(float) (2*Math.random()-1); v1[1]=(float) (2*Math.random()-1);
+		v2[0]=(float) (2*Math.random()-1); v2[1]=(float) (2*Math.random()-1);
+		v3[0]=(float) (2*Math.random()-1); v3[1]=(float) (2*Math.random()-1);
+
+		float[][] controlPoints = new float[3][1];
+		
+		controlPoints[0] = v1;
+		controlPoints[1] = v2;
+		controlPoints[2] = v3;
+
+		gl.glClear(GL_DEPTH_BUFFER_BIT);
+
+		gl.glUseProgram(rendering_program);
+
+		int mv_loc = gl.glGetUniformLocation(rendering_program, "mv_matrix");
+		int proj_loc = gl.glGetUniformLocation(rendering_program, "proj_matrix");
+
+		float aspect = (float) myCanvas.getWidth() / (float) myCanvas.getHeight();
+		Matrix3D pMat = orthogonal(-1.5f,1.5f,1.5f,-1.5f,0.1f,1000.0f);
+
+		Matrix3D vMat = new Matrix3D();
+		vMat.translate(-cameraX, -cameraY, -cameraZ);
+		Matrix3D mMat = new Matrix3D();
+		mMat.setToIdentity();
+
+		Matrix3D mvMat = new Matrix3D();
+		mvMat.concatenate(vMat);
+		mvMat.concatenate(mMat);
+
+		gl.glUniformMatrix4fv(mv_loc, 1, false, mvMat.getFloatValues(), 0);
+		gl.glUniformMatrix4fv(proj_loc, 1, false, pMat.getFloatValues(), 0);
+		//gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+		gl.glVertexAttribPointer(0, 2, GL_FLOAT, false, 0, 0);//We are only passing two components
+		gl.glEnableVertexAttribArray(0);
+
+		gl.glEnable(GL_DEPTH_TEST);
+		gl.glDepthFunc(GL_LEQUAL);
+
+		drawControls(controlPoints);
+		drawBezierCurve(controlPoints);
+	}
+	
+	private void drawControls (float[][] C) {
+		drawLine(C[0], C[1]);
+		drawLine(C[1], C[2]);
+	}
+	
+	private void drawBezierCurve (float[][] C) {
+		
+		float[] currentPoint = C[0];
+		double t = 0.0;
+		double increment = Math.pow(N, (-1));
+		
+		while (t<=1.0) {
+			float[] nextPoint = {0,0};
+			for (int i=0; i<=2; i++) {
+				nextPoint[0] = (float) (nextPoint[0] + (blending(i, t) * C[i][0]));
+				nextPoint[1] = (float) (nextPoint[1] + (blending(i, t) * C[i][1]));
+			}
+			drawLine(currentPoint, nextPoint);
+			currentPoint = nextPoint;
+			t = t + increment;
+		}
+	}
+	
+	double blending(int i, double t) {
+		switch (i) {
+			case 0: return ((1-t)*(1-t));
+			case 1: return (2*t*(1-t)); 
+			case 2: return (t*t);
+			default: return 0;
+		}
+	}
+
+	public void init(GLAutoDrawable drawable)
+	{	GL4 gl = (GL4) drawable.getGL();
+		rendering_program = createShaderProgram();
+		rendering_program2 = createShaderProgram2();
+		cameraX = 0.0f; cameraY = 0.0f; cameraZ = 10.0f;
+		gl.glGenVertexArrays(vao.length, vao, 0);
+		gl.glBindVertexArray(vao[0]);
+		gl.glGenBuffers(vbo.length, vbo, 0);
+
+		gl.glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+
+	}
+	
+
+	private Matrix3D orthogonal(float left, float right, float top, float bottom, float near, float far)
+	{
+		Matrix3D r = new Matrix3D();
+		r.setElementAt(0,0,2.0/(right-left));
+		r.setElementAt(1,1,2.0/(top-bottom));
+		r.setElementAt(2,2,1/(far-near));
+		r.setElementAt(3,3,1.0f);
+		r.setElementAt(0,3,-(right+left)/(right-left));
+		r.setElementAt(1,3,-(top+bottom)/(top-bottom));
+		r.setElementAt(2, 3, -near/(far-near));
+		return r;
+	}
+
+	public static void main(String[] args) { 
+		int n = 10;
+		Scanner input = new Scanner(System.in);
+		
+		try {
+			System.out.println("Please enter an int for iterative steps: ");
+			System.out.println();
+			n = input.nextInt();
+		} catch (Exception d) {
+			System.out.println("Error: invalid input");
+		}
+		
+		System.out.println();
+		System.out.println();
+		new Curve(n); 
+	}
+	
+	public void reshape(GLAutoDrawable drawable, int x, int y, int width, int height) {}
+	public void dispose(GLAutoDrawable drawable) {}
+
+	private int createShaderProgram()
+	{	GL4 gl = (GL4) GLContext.getCurrentGL();
+
+	String vshaderSource[] = util.readShaderSource("prog_data/Prog2_5_data/vert.shader");
+	String fshaderSource[] = util.readShaderSource("prog_data/Prog2_5_data/frag.shader");
+
+		int vShader = gl.glCreateShader(GL_VERTEX_SHADER);
+		int fShader = gl.glCreateShader(GL_FRAGMENT_SHADER);
+
+		gl.glShaderSource(vShader, vshaderSource.length, vshaderSource, null, 0);
+		gl.glShaderSource(fShader, fshaderSource.length, fshaderSource, null, 0);
+
+		gl.glCompileShader(vShader);
+		gl.glCompileShader(fShader);
+
+		int vfprogram = gl.glCreateProgram();
+		gl.glAttachShader(vfprogram, vShader);
+		gl.glAttachShader(vfprogram, fShader);
+		gl.glLinkProgram(vfprogram);
+		return vfprogram;
+	}
+	
+	private int createShaderProgram2()
+	{	GL4 gl = (GL4) GLContext.getCurrentGL();
+
+	String vshaderSource[] = util.readShaderSource("prog_data/Prog2_5_data/vert.shader");
+	String fshaderSource[] = util.readShaderSource("prog_data/Prog2_5_data/frag.shader");
+
+		int vShader = gl.glCreateShader(GL_VERTEX_SHADER);
+		int fShader = gl.glCreateShader(GL_FRAGMENT_SHADER);
+
+		gl.glShaderSource(vShader, vshaderSource.length, vshaderSource, null, 0);
+		gl.glShaderSource(fShader, fshaderSource.length, fshaderSource, null, 0);
+
+		gl.glCompileShader(vShader);
+		gl.glCompileShader(fShader);
+
+		int vfprogram = gl.glCreateProgram();
+		gl.glAttachShader(vfprogram, vShader);
+		gl.glAttachShader(vfprogram, fShader);
+		gl.glLinkProgram(vfprogram);
+		return vfprogram;
+	}
+	
+ 
+	
+	private void drawLine(float [] v1, float[] v2) {
+		GL4 gl = (GL4) GLContext.getCurrentGL();
+		//Store points in backing store
+		vertex_positions[0]=v1[0];
+		vertex_positions[1]=v1[1];
+		vertex_positions[2]=v2[0];
+		vertex_positions[3]=v2[1];
+
+		FloatBuffer vertBuf = Buffers.newDirectFloatBuffer(vertex_positions);
+		gl.glBufferData(GL_ARRAY_BUFFER, vertBuf.limit()*4, vertBuf, GL_STATIC_DRAW);
+
+		//Draw now
+		gl.glDrawArrays(GL_LINES, 0, 2);
+		gl.glPointSize(2.5f);
+		gl.glDrawArrays(GL_POINTS,0,2);
+
+	}
